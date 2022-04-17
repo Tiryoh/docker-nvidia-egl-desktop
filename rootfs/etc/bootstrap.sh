@@ -2,10 +2,7 @@
 
 trap "echo TRAPed signal" HUP INT QUIT KILL TERM
 
-sudo chown user:user /home/user
-echo "user:$PASSWD" | sudo chpasswd
 sudo rm -rf /tmp/.X*
-sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" | sudo tee /etc/timezone > /dev/null
 export PATH="${PATH}:/opt/VirtualGL/bin"
 export LD_LIBRARY_PATH="/usr/lib/libreoffice/program:${LD_LIBRARY_PATH}"
 

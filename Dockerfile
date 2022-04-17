@@ -13,7 +13,6 @@ ENV NVIDIA_DRIVER_CAPABILITIES all
 ENV PULSE_SERVER 127.0.0.1:4713
 
 # Default environment variables (password is "mypasswd")
-ENV TZ UTC
 ENV SIZEW 1920
 ENV SIZEH 1080
 ENV REFRESH 60
@@ -88,20 +87,6 @@ RUN if [ "${UBUNTU_RELEASE}" = "18.04" ]; then apt-get update && apt-get install
     }\n\
 }" > /etc/vulkan/icd.d/nvidia_icd.json
 
-# Wine, Winetricks, and PlayOnLinux, comment out the below lines to disable
-ARG WINE_BRANCH=devel
-RUN if [ "${UBUNTU_RELEASE}" = "18.04" ]; then add-apt-repository ppa:cybermax-dexter/sdl2-backport; fi && \
-    curl -fsSL https://dl.winehq.org/wine-builds/winehq.key | APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1 apt-key add - && \
-    apt-add-repository "deb https://dl.winehq.org/wine-builds/ubuntu/ $(grep VERSION_CODENAME= /etc/os-release | cut -d= -f2) main" && \
-    apt-get update && apt-get install -y \
-        winehq-${WINE_BRANCH} \
-        q4wine \
-        playonlinux && \
-    rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL -o /usr/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks && \
-    chmod 755 /usr/bin/winetricks && \
-    curl -fsSL -o /usr/share/bash-completion/completions/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks.bash-completion
-
 # Install VirtualGL
 RUN VIRTUALGL_VERSION=$(curl -fsSL "https://api.github.com/repos/VirtualGL/virtualgl/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g') && \
     curl -fsSL -O https://sourceforge.net/projects/virtualgl/files/virtualgl_${VIRTUALGL_VERSION}_amd64.deb && \
@@ -148,10 +133,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
         libgirepository1.0-dev && \
     rm -rf /var/lib/apt/lists/* && \
     cd /opt && \
-    SELKIES_VERSION=$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies-gstreamer/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g') && \
-    curl -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-v${SELKIES_VERSION}-ubuntu${UBUNTU_RELEASE}.tgz" | tar -zxf - && \
-    curl -O -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && pip3 install "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && rm -f "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && \
-    curl -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-web-v${SELKIES_VERSION}.tgz" | tar -zxf - && \
+    SELKIES_VERSION=$(curl -fsSL --retry 5 "https://api.github.com/repos/selkies-project/selkies-gstreamer/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g') && \
+    curl -fsSL --retry 5 "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-v${SELKIES_VERSION}-ubuntu${UBUNTU_RELEASE}.tgz" | tar -zxf - && \
+    curl -O -fsSL --retry 5 "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && pip3 install "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && rm -f "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && \
+    curl -fsSL --retry 5 "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-web-v${SELKIES_VERSION}.tgz" | tar -zxf - && \
     cd /usr/local/cuda/lib64 && sudo find . -maxdepth 1 -type l -name "*libnvrtc.so.*" -exec sh -c 'ln -sf $(basename {}) libnvrtc.so' \;
 
 # Install latest noVNC web interface for fallback
@@ -191,29 +176,21 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 
 # Add custom packages below this comment
 
-# Create user with password ${PASSWD}
-RUN apt-get update && apt-get install --no-install-recommends -y \
-        sudo && \
-    rm -rf /var/lib/apt/lists/* && \
-    groupadd -g 1000 user && \
-    useradd -ms /bin/bash user -u 1000 -g 1000 && \
-    usermod -a -G adm,audio,cdrom,dialout,dip,fax,floppy,input,lp,lpadmin,netdev,plugdev,scanner,ssh,sudo,tape,tty,video,voice user && \
-    echo "user ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
-    chown user:user /home/user && \
-    echo "user:${PASSWD}" | chpasswd && \
-    ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
-COPY entrypoint.sh /etc/entrypoint.sh
-RUN chmod 755 /etc/entrypoint.sh
-COPY selkies-gstreamer-entrypoint.sh /etc/selkies-gstreamer-entrypoint.sh
+
+# tini to fix subreap
+ARG TINI_VERSION=v0.18.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
+RUN chmod +x /bin/tini
+
+COPY rootfs /
+RUN chmod 755 /etc/bootstrap.sh
 RUN chmod 755 /etc/selkies-gstreamer-entrypoint.sh
-COPY supervisord.conf /etc/supervisord.conf
-RUN chmod 755 /etc/supervisord.conf
+RUN chmod 755 /entrypoint.sh
 
 EXPOSE 8080
 
-USER user
-ENV USER=user
-WORKDIR /home/user
+ENV USER ubuntu
 
-ENTRYPOINT ["/usr/bin/supervisord"]
+ENTRYPOINT ["/entrypoint.sh"]
+

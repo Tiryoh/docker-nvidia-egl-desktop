@@ -108,7 +108,7 @@ spec:
           name: dshm
         - mountPath: /cache
           name: egl-cache-vol
-        - mountPath: /home/user
+        - mountPath: %HOME%
           name: egl-root-vol
       volumes:
       - name: dshm
